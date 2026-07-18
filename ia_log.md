@@ -32,3 +32,13 @@
 - **Entrega:** ...
 - **Limitação encontrada:** ...
 -->
+
+## 2026-07-18 — Diagnóstico do Sharpe negativo e correção v1.1 (Claude)
+- Backtest v1 imprimiu Sharpe exc. CDI de -0,24. A IA diagnosticou que não era
+  bug de sinal: o PnL do overlay era comparado ao CDI (~9% a.a.) sem remunerar
+  o caixa. Na implementação real via futuros, a margem rende CDI.
+- Correção v1.1 (1 linha): retorno total = CDI + PnL - custos.
+  Resultado: CAGR 15,5% | Sharpe exc. CDI 0,57 | MaxDD -14,5% | 2008: +9,9% | 2020: +8,0%.
+- Limitação de ambiente documentada: sandbox da IA sem acesso a Yahoo/BCB;
+  dados baixados pelo navegador do usuário (CSVs gerados via JS) e validados
+  (cobertura por ativo, inícios de série coerentes com inception dos ETFs).

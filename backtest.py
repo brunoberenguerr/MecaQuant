@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Backtest v1 — Time-Series Momentum multi-ativo com volatility targeting.
+Backtest v1.1 — Time-Series Momentum multi-ativo com volatility targeting.
 
 Especificação completa em CLAUDE.md. Parâmetros canônicos da literatura
 (Moskowitz, Ooi & Pedersen 2012) — NÃO otimizar por grid search.
@@ -14,6 +14,11 @@ Saídas em results/:
 Anti-look-ahead: o sinal do mês usa preços só até o fim do mês anterior;
 a vol usa dados até o último pregão do mês; os pesos valem a partir do
 pregão SEGUINTE ao cálculo (retorno começa a contar no fechamento seguinte).
+
+v1.1: caixa remunerado a CDI — modelo padrão de implementação via futuros
+(margem aplicada em caixa): retorno total = CDI + PnL do overlay - custos.
+No v1 o caixa rendia zero, o que subestimava a estratégia contra um
+benchmark de caixa de ~11%% a.a. no Brasil.
 
 Simplificações documentadas (v1):
   - Retornos de preço em moeda local por série (sem conversão cambial do PnL);
@@ -222,6 +227,7 @@ def main():
 
     r_estrategia = ((W * rets).sum(axis=1) - custos).loc[INICIO:]
     cdi_d, nome_cdi = carregar_cdi(r_estrategia.index)
+    r_estrategia = r_estrategia + cdi_d  # v1.1: caixa a CDI (futuros/margem)
     r_ibov = rets['^BVSP'].loc[r_estrategia.index]
     r_cdi = cdi_d
 
