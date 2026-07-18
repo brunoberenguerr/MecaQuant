@@ -42,3 +42,10 @@
 - Limitação de ambiente documentada: sandbox da IA sem acesso a Yahoo/BCB;
   dados baixados pelo navegador do usuário (CSVs gerados via JS) e validados
   (cobertura por ativo, inícios de série coerentes com inception dos ETFs).
+
+## 2026-07-18 — Pré-relatório e identidade do robô (Claude)
+- **O quê:** IA montou o pré-relatório completo (5 págs, 16:9, ~830 palavras)
+  e criou a identidade visual do MIYAGI por código vetorial (matplotlib).
+- **Entrega:** `prerelatorio/` (PDF final, PPTX editável, emblemas, scripts).
+- **Limitação encontrada:** contagem de palavras acima da referência na 1ª
+  versão (905) → revisão de concisão via IA até 832.
