@@ -1,0 +1,168 @@
+# MARÉ — configuração base.
+#
+# ÚNICA fonte de parâmetros do projeto. Nada de número mágico espalhado no código.
+#
+# Convenção: todo parâmetro traz `# fonte:` dizendo se foi FIXADO POR CITAÇÃO
+# (não é tunado, não entra na contagem N do Deflated Sharpe) ou se é LIVRE
+# (é tunado, entra na contagem N). Manter essa distinção honesta é o que
+# permite reportar um DSR defensável.
+
+meta:
+  name: MARE
+  descricao: "Mean-reversion Adaptive Residual Engine"
+
+data:
+  start: "2005-01-01"        # 2 anos de warm-up antes do início do backtest (2007)
+  end: "2026-07-18"
+  cache_dir: "data/raw"
+  benchmark: "SPY"
+  vix: "^VIX"
+  riskfree_series: "DTB3"    # FRED, 3-month T-bill. O caixa PRECISA render algo.
+
+splits:
+  # Holdout intocado até o congelamento. Toda calibração acontece em `design`.
+  design_start: "2007-01-01"
+  design_end: "2016-12-31"
+  holdout_start: "2017-01-01"
+  holdout_end: "2026-07-18"
+
+universe:
+  index: "SP500"
+  adv_window: 20             # dias para a mediana de dólar-volume
+  min_dollar_volume: 20_000_000   # LIVRE. Corte de liquidez; participação viável.
+  min_price: 5.0             # fonte: convenção de mercado (evita penny stocks e
+                             # o ruído de tick que domina retornos abaixo disso).
+                             # Medido em Close BRUTO, não ajustado.
+  min_valid_returns: 200     # de 252. Exige história suficiente para a PCA.
+
+sanity:
+  # Causa nº1 de alpha falso em stat arb: tick ruim vira "dip" que a estratégia
+  # compra por construção, e a "recuperação" no dia seguinte vira dinheiro de graça.
+  winsorize_abs: 0.25        # aplicado ANTES da PCA
+  flag_abs: 0.50             # acima disso, auditoria manual (não é auto-corrigido)
+
+factor:
+  # Bloco fatorial: decomposição espectral do operador de covariância.
+  window: 504                # fonte: q = N/T. Com N~450 e T=252, q~1.8 > 1 e a
+                             # covariância amostral é singular -> Marchenko-Pastur
+                             # mal-posto. Com T=504, q~0.9.
+  halflife: 126              # ponderação exponencial: mantém peso no dado recente
+  k_method: "marchenko_pastur"   # marchenko_pastur | fixed
+  k_fixed: 15                # usado só no pipeline P0 e em testes
+  k_min: 5
+  k_max: 30
+  k_hysteresis_days: 21      # mediana de k. Sem isso, saltos em k mudam o span
+                             # dos regressores e geram turnover puro-ruído.
+
+residual:
+  # Conserto do bug da ponte: acumular resíduos IN-SAMPLE força soma zero por
+  # construção do OLS -> X_t começa e termina em zero, e o kappa estimado mede
+  # artefato de projeção, não reversão negociável.
+  beta_window: 504           # betas estimados em [t-504, t-60]
+  beta_gap: 60               # ...e congelados
+  resid_window: 60           # resíduos OUT-OF-SAMPLE em [t-60, t]. fonte: A&L (2010)
+  min_r2: 0.10               # LIVRE. Rejeita nomes sem estrutura fatorial.
+
+ou:
+  kendall_correction: true   # AR(1) tem viés descendente -(1+3b)/T -> superestima
+                             # kappa -> sigma_eq menor -> |s| inflado -> opera demais.
+  shrinkage: true            # empirical-Bayes de kappa/theta para o pooled
+                             # cross-sectional. Com ~3 ciclos independentes na
+                             # janela, kappa por nome é quase não-identificado.
+  shrink_theta_to_zero: true # theta livre por nome é sobreajuste de drift
+  halflife_min: 10           # fonte: 2x o intervalo de rebalance. Abaixo disso a
+                             # reversão acaba antes de rebalancearmos.
+  halflife_max: 45           # fonte: 0.75 * resid_window. Acima disso é
+                             # indistinguível de random walk na janela.
+  entry_s: -1.25             # FIXO POR CITAÇÃO: Avellaneda & Lee (2010). NÃO TUNAR.
+  exit_s: -0.50              # FIXO POR CITAÇÃO: Avellaneda & Lee (2010). NÃO TUNAR.
+  stop_s: -3.00              # LIVRE, mas motivado: ~3 sigma do equilíbrio.
+  # Gate de meia-vida DESLIGADO na seleção de produção. A ablação (script 04)
+  # mediu que filtrar por meia-vida custa -0.30pp de retorno em 21d: a banda é
+  # função de kappa, o parâmetro mais mal-identificado (~3 ciclos em 60 obs), e
+  # filtrar por ela injeta ruído de estimação sem adicionar informação. A banda
+  # continua calculada para o exhibit e ainda serve de gatilho de SAÍDA razoável.
+  use_half_life_gate: false
+  # Gate ADF/variance-ratio CORTADO de propósito: com 60 obs o poder contra
+  # meia-vida de 20d é ~10-20%. Selecionar quem passa in-sample é selecionar
+  # ruído, e infla o backtest.
+
+passage:
+  # Primeira passagem por função de escala / medida de velocidade (exato para
+  # qualquer difusão 1-D). Substitui as fórmulas de Bertram com Erfi/digamma,
+  # que valem para passagem UNILATERAL SEM STOP — não é o nosso problema.
+  #
+  # DESLIGADA na produção. A ablação mostrou que o gate de P(alvo) custa -0.19pp
+  # e o ranking por mu_s custa -0.43pp em 21d, ambos porque dependem de kappa.
+  # A máquina permanece implementada, validada contra Monte Carlo e é usada nos
+  # scripts de diagnóstico (03) e ablação (04) como exhibit de análise crítica —
+  # "construímos o refinamento, medimos, e ele não paga". Ligá-la aqui reativa
+  # o gate de probabilidade e o ranking por mu_s.
+  enabled: false
+  n_quad: 400                # nós de quadratura
+  min_prob: 0.55             # LIVRE. Só entra se P(alvo antes do stop) > isso.
+  rank_by: "s_score"         # produção ranqueia por s-score (nível robusto).
+                             # mu_s = (alvo - entrada - custo)/E[T] fica p/ exhibit.
+
+portfolio:
+  n_names: 40                # LIVRE, retunado via curva de sensibilidade
+                             # (scripts/11_n_names_sensitivity.py, grade 10-60).
+                             # O Sharpe é estatisticamente PLANO em toda a grade
+                             # (erro-padrão de Lo 2002 ~0.23 sobre uma dispersão
+                             # de ~0.04 entre pontos — nenhum n é distinguível de
+                             # outro, z<0.13 em toda a grade). A escolha usa os
+                             # dois critérios que se movem de forma monotônica e
+                             # não-ruidosa: turnover (custo) e vol caem com N.
+                             # n=40 empata com o pico e tem mais margem contra o
+                             # pool elegível mínimo (56) do que n=50/60.
+  weighting: "inverse_vol"   # equal | inverse_vol
+  ewma_lambda: 0.94          # FIXO POR CITAÇÃO: RiskMetrics.
+  max_weight_mult: 2.0       # cap por nome = mult / n_names
+  max_sector_weight: 0.25
+  vol_target: 0.10           # LIVRE. 10% a.a.
+  max_leverage: 1.0          # só desaloca, nunca alavanca (long-only de verdade)
+
+regime:
+  enabled: true
+  model: "jump"              # jump | hmm | none
+  n_states: 2
+  # ARMADILHA: o DP do jump model é naturalmente um SMOOTHER. Usar a sequência
+  # suavizada é look-ahead catastrófico e produz curva de patrimônio linda e falsa.
+  # Só estado FILTRADO/ONLINE, com padronização em janela EXPANDING.
+  online_only: true
+  standardize: "expanding"
+  feature_halflives: [20, 60, 120]
+  return_halflife: 120
+  refit_every_days: 126
+  fit_lookback: 2000
+  jump_penalty: 1.0          # LIVRE. Loss normalizada por feature -> lambda é
+                             # invariante à dimensão. Calibrado em [0.6, 2.0],
+                             # onde real e sintético são estáveis: ~14% dos dias
+                             # em estresse, vol 15% (calmo) vs 36% (estresse).
+  bear_multiplier: 0.5       # não zera exposição: 0 vira market timing puro
+
+backtest:
+  rebalance: "weekly"
+  rebalance_weekday: 2       # 2 = quarta-feira
+  signal_lag_days: 1         # sinal com dados até terça no fechamento
+  initial_capital: 1_000_000
+
+costs:
+  scenario: "base"
+  # Reportar o CUSTO DE BREAK-EVEN ("a que nível o alpha morre?") é uma linha de
+  # código e o exhibit mais persuasivo do relatório.
+  scenarios:
+    optimistic:  {commission_bps: 0.3, half_spread_bps: 1.0, impact_coef_bps: 5.0}
+    base:        {commission_bps: 0.5, half_spread_bps: 2.0, impact_coef_bps: 10.0}
+    pessimistic: {commission_bps: 1.0, half_spread_bps: 6.0, impact_coef_bps: 25.0}
+  # impacto = impact_coef_bps * sqrt(participacao no ADV)
+  max_participation: 0.05
+
+validation:
+  purge_days: 10
+  embargo_days: 10
+  wf_train_years: 3
+  wf_test_years: 1
+  placebo_draws: 1000
+  bootstrap_block_days: 21
+  cscv_splits: 16

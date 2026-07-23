@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Dados brutos e intermediários não vão para o repositório (reprodutíveis via scripts/00_download.py).
+data/raw/
+data/interim/
+data/processed/
+
+# O registry é append-only e DEVE ser versionado: é dele que sai o N honesto do Deflated Sharpe.
+!config/registry.jsonl
+
+reports/*.html
